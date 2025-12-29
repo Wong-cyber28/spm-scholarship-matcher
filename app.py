@@ -36,8 +36,8 @@ def AskDeepSeek(prompt_text):
         response = client.chat.completions.create(
             model="deepseek-chat",
             messages=[
-                # 🌟 优化后的 System Prompt：更贴近马来西亚学生语境
-                {"role": "system", "content": "You are an experienced Malaysian education counselor (Cikgu/Counselor). Your tone is encouraging, empathetic, and realistic. Analyze the student's SPM results and their wish. 1. If they qualify for scholarships, highlight the best 2-3 matches. 2. If they qualify for nothing, kindly suggest realistic alternatives like Matrikulasi, Form 6 (STPM), UPU, or Polythecnic. 3. Reply in a mix of Chinese and English (Manglish style is okay if appropriate), suitable for a 17-year-old student."},
+                # 🌟 AI 设定优化：强制中文 + 马来西亚升学顾问人设
+                {"role": "system", "content": "You are an experienced Malaysian education counselor (Cikgu). Your tone is encouraging, empathetic, and realistic. Analyze the student's SPM results and wish. 1. Recommend best scholarships. 2. Suggest alternatives if none qualify. 3. CRITICAL RULE: You MUST reply primarily in CHINESE (Malaysian Mandarin). Even if the user asks nonsense or inappropriate questions, you must politely guide them back or refuse in CHINESE. Do not switch to English blocks unless explaining specific terms."},
                 {"role": "user", "content": prompt_text}
             ],
             temperature=0.7,
@@ -156,7 +156,7 @@ SCHOLARSHIP_DB = [
             "Fizik": ["A+"],
             "Kimia": ["A+"]
         },
-        "must_all_A_minus": True, # <--- 新增开关：所有科目最低 A-
+        "must_all_A_minus": True, # <--- 关键开关：所有科目最低 A-
         "koko_marks": 8.5, "state_req": "All", "muslim_req": False, "bumi_req": False,
         "field_block": "医学/牙医/药剂 (Medicine/Dentistry/Pharmacy)", 
         "desc": "JPA 最顶级的奖学金。要求核心科目全 A+，且其余所有科目不得低于 A-。",
@@ -483,7 +483,7 @@ with col2:
     is_bumi = True if race == "Bumiputera" else False
 
 # ==========================================
-# 🚀 替换开始：防卡顿 + 智能过滤版
+# 🚀 替换开始：防卡顿 + 智能过滤 + 启动同步版
 # ==========================================
 
 st.subheader("📚 科目与成绩 (Subjects & Grades)")
@@ -644,6 +644,17 @@ if analyze_btn:
     for sub, grade in user_grades.items():
         prompt_grades_str += f"- {sub}: {grade}\n"
 
+    # === 👇 新增：给 AI 的“入学标准小抄” (Knowledge Base)，防止幻觉 ===
+    general_requirements = """
+    Reference Guidelines for Malaysia Pathways (Use this to advise):
+    1. JPA/Petronas/Top Scholarships: strictly requires A+/A grades.
+    2. Matrikulasi (Science): Generally requires decent results (mix of A and B). If a student has mostly C/D, do NOT recommend Matrikulasi Science lightly.
+    3. Asasi (Public Uni Foundation): Highly competitive, usually needs multiple As.
+    4. STPM (Form 6): The most accessible route. Open to almost anyone with credits (C) in BM and Sejarah. Best for students with average results (B/C) who want a second chance.
+    5. Diploma (UPU/Polytechnic): Good for students with B/C/D grades. Focus on skills.
+    6. IPTS (Private): Entry is flexible (usually 3-5 Credits), but requires money/loans (PTPTN).
+    """
+
     ai_prompt = f"""
     Student Profile:
     - State: {user_state}
@@ -727,11 +738,16 @@ if analyze_btn:
         ai_prompt += "None. The student did not qualify for any scholarships in the database.\n"
     
     # 补充 AI Prompt 指令
-    ai_prompt += """
-    \nBased on the above, provide helpful advice to the student. 
-    1. If scholarships are listed, recommend the best fit for their wish.
-    2. If NO scholarships are listed, suggest alternative pathways (e.g., Matrikulasi, STPM, IPTS loans).
-    3. Keep the advice encouraging but realistic.
+    ai_prompt += f"""
+    \n[IMPORTANT REFERENCE DATA]
+    {general_requirements}
+    
+    Based on the Student Profile, SPM Results, and the [IMPORTANT REFERENCE DATA] above:
+    1. If scholarships are listed, recommend the best fit.
+    2. If NO scholarships are listed, suggest realistic alternatives (STPM, Matrikulasi, Diploma) based on their specific grades. 
+    3. BE REALISTIC. If grades are mostly B/C, recommend STPM or Diploma, NOT Asasi/Matrikulasi Science.
+    4. Keep the advice encouraging but honest.
+    5. CRITICAL RULE: Reply primarily in CHINESE (Malaysian Mandarin).
     """
 
     # --- 4. DeepSeek AI 分析 ---
@@ -746,5 +762,8 @@ if analyze_btn:
                 <p>{advice}</p>
             </div>
             """, unsafe_allow_html=True)
+            
+            # 👇 新增：免责声明
+            st.caption("⚠️ 免责声明：AI 建议仅供参考，入学标准每年可能会更改。请务必以 UPU/Matrikulasi 官方最新公告为准。")
     else:
         st.info("在上方输入你的升学愿望，AI 才能给你更准确的建议哦！")
