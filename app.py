@@ -3,144 +3,121 @@ import pandas as pd
 import streamlit.components.v1 as components
 import uuid
 import os
+from openai import OpenAI
 
-# --- 1. 页面配置 ---
+# --- 1. 页面配置 (必须在第一行) ---
 st.set_page_config(
     page_title="SPM Scholarship Check",
     page_icon="🎓",
     layout="centered",
-    initial_sidebar_state="expanded" 
+    initial_sidebar_state="expanded"
 )
 
-# --- 2. CSS 美化 (UI 终极视觉增强版) ---
+# --- 2. API 设置 ---
+# ⚠️ 部署指南：
+# 1. 本地运行：在 .streamlit/secrets.toml 中配置 DEEPSEEK_API_KEY
+# 2. Cloud 部署：在 App Settings -> Secrets 中添加
+api_key = st.secrets.get("DEEPSEEK_API_KEY")
+
+try:
+    if api_key:
+        client = OpenAI(api_key=api_key, base_url="https://api.deepseek.com")
+        api_ready = True
+    else:
+        api_ready = False
+except Exception as e:
+    api_ready = False
+
+def AskDeepSeek(prompt_text):
+    """调用 DeepSeek AI 获取升学建议"""
+    if not api_ready:
+        return "⚠️ API Key 未配置。请在 .streamlit/secrets.toml 中配置 DEEPSEEK_API_KEY。"
+    try:
+        response = client.chat.completions.create(
+            model="deepseek-chat",
+            messages=[
+                # 🌟 优化后的 System Prompt：更贴近马来西亚学生语境
+                {"role": "system", "content": "You are an experienced Malaysian education counselor (Cikgu/Counselor). Your tone is encouraging, empathetic, and realistic. Analyze the student's SPM results and their wish. 1. If they qualify for scholarships, highlight the best 2-3 matches. 2. If they qualify for nothing, kindly suggest realistic alternatives like Matrikulasi, Form 6 (STPM), UPU, or Polythecnic. 3. Reply in a mix of Chinese and English (Manglish style is okay if appropriate), suitable for a 17-year-old student."},
+                {"role": "user", "content": prompt_text}
+            ],
+            temperature=0.7,
+            max_tokens=1000
+        )
+        return response.choices[0].message.content.strip()
+    except Exception as e:
+        return f"⚠️ AI 连接失败: {str(e)}。请检查网络或余额。"
+
+# --- 3. CSS 美化 ---
 st.markdown("""
 <style>
-    /* === 侧边栏收起时的样式 === */
+    /* === 侧边栏收起/展开样式 === */
     [data-testid="stSidebarCollapsedControl"] {
-        position: fixed !important;
-        left: 0 !important;
-        top: 0 !important;
-        width: 32px !important;
-        height: 100vh !important;
+        position: fixed !important; left: 0 !important; top: 0 !important;
+        width: 32px !important; height: 100vh !important;
         background-color: #FFFDF5 !important;
         border-right: 2px solid #FDE68A !important;
         z-index: 100000 !important;
-        display: flex !important;
-        align-items: flex-start !important;
-        justify-content: center !important;
-        padding-top: 20px !important;
-        transition: background-color 0.3s;
+        display: flex !important; align-items: flex-start !important; justify-content: center !important;
+        padding-top: 20px !important; transition: background-color 0.3s;
     }
-    [data-testid="stSidebarCollapsedControl"]:hover {
-        background-color: #FEF3C7 !important;
-        cursor: pointer;
-    }
+    [data-testid="stSidebarCollapsedControl"]:hover { background-color: #FEF3C7 !important; cursor: pointer; }
     [data-testid="stSidebarCollapsedControl"] svg {
-        color: #D97706 !important;
-        fill: #D97706 !important;
-        width: 20px !important;
-        height: 20px !important;
-        stroke-width: 3px !important;
+        color: #D97706 !important; fill: #D97706 !important;
+        width: 20px !important; height: 20px !important; stroke-width: 3px !important;
     }
+    section[data-testid="stSidebar"] { width: 450px !important; background-color: #FFFDF5; border-right: 1px solid #F3E8D3; }
 
-    /* === 侧边栏展开时的样式 === */
-    section[data-testid="stSidebar"] {
-        width: 450px !important;
-        background-color: #FFFDF5; 
-        border-right: 1px solid #F3E8D3;
-    }
-
-    /* === 基础样式 === */
+    /* === 界面洁癖处理 === */
     #MainMenu {visibility: hidden;}
     footer {visibility: hidden;}
     .st-emotion-cache-1plm3a3 a {display: none !important;} 
     h1 a, h2 a, h3 a {display: none !important;}
     .block-container {padding-top: 2rem; padding-bottom: 5rem;}
     
+    /* === 输入框与按钮优化 === */
     button[data-testid="stNumberInputStepDown"] { display: none !important; }
     button[data-testid="stNumberInputStepUp"] { display: none !important; }
-    
-    /* 结果卡片 */
+    .stSelectbox { margin-bottom: 0px; }
+    div.stButton > button { width: 100%; border-radius: 8px; height: 45px; }
+
+    /* === 删除按钮样式 === */
+    div[data-testid="column"] button {
+        border-color: #FECACA; color: #DC2626; border-radius: 50%;
+        width: 35px; height: 35px;
+    }
+    div[data-testid="column"] button:hover { background-color: #FEF2F2; border-color: #EF4444; }
+
+    /* === 结果卡片样式 === */
     .scholarship-card {
-        background-color: white;
-        padding: 20px;
-        border-radius: 12px;
-        box-shadow: 0 4px 6px rgba(0,0,0,0.05);
-        margin-bottom: 15px;
-        border-left: 6px solid #10B981; 
-        animation: fadeIn 0.8s;
-        transition: transform 0.2s;
+        background-color: white; padding: 20px; border-radius: 12px;
+        box-shadow: 0 4px 6px rgba(0,0,0,0.05); margin-bottom: 15px;
+        border-left: 6px solid #10B981; animation: fadeIn 0.8s; transition: transform 0.2s;
     }
-    .scholarship-card:hover {
-        transform: translateY(-2px);
-        box-shadow: 0 10px 15px rgba(0,0,0,0.1);
-    }
+    .scholarship-card:hover { transform: translateY(-2px); box-shadow: 0 10px 15px rgba(0,0,0,0.1); }
     
-    .tag {
-        display: inline-block;
-        background-color: #E0F2FE;
-        color: #0284C7;
-        padding: 2px 10px;
-        border-radius: 15px;
-        font-size: 12px;
-        margin-right: 5px;
-        font-weight: 600;
-    }
-    
-    .info-text {
-        font-size: 13px;
-        color: #4B5563;
-        margin-top: 8px;
-        line-height: 1.5;
-    }
+    /* === 标签与文本样式 === */
+    .tag { display: inline-block; background-color: #E0F2FE; color: #0284C7; padding: 2px 10px; border-radius: 15px; font-size: 12px; margin-right: 5px; font-weight: 600; }
+    .info-text { font-size: 13px; color: #4B5563; margin-top: 8px; line-height: 1.5; }
     .field-tag { color: #D97706; font-weight: bold; } 
     .block-tag { color: #DC2626; font-weight: bold; } 
-    .b40-tag { color: #059669; font-weight: bold; }   
+    .b40-tag { color: #059669; font-weight: bold; }     
 
-    div[data-testid="column"] button {
-        border-color: #FECACA;
-        color: #DC2626;
-        border-radius: 50%;
-        width: 35px;
-        height: 35px;
+    /* === AI 建议框样式 === */
+    .ai-box {
+        background-color: #F0FDF4; border: 1px solid #BBF7D0;
+        padding: 20px; border-radius: 10px; margin-top: 20px;
+        color: #166534; animation: fadeIn 0.8s ease-in;
     }
-    div[data-testid="column"] button:hover {
-        background-color: #FEF2F2;
-        border-color: #EF4444;
-    }
+    .ai-box h4 { margin-top: 0; color: #15803d; }
     
-    .stSelectbox { margin-bottom: 0px; }
-    
-    .feedback-btn {
-        display: inline-flex;
-        align-items: center;
-        justify-content: center;
-        background-color: #F3F4F6;
-        color: #374151;
-        padding: 10px 20px;
-        border-radius: 8px;
-        text-decoration: none;
-        font-weight: 600;
-        border: 1px solid #D1D5DB;
-        transition: all 0.2s;
-        width: 100%;
-        margin-top: 10px;
-    }
-    .feedback-btn:hover {
-        background-color: #E5E7EB;
-        border-color: #9CA3AF;
-        color: #111827;
-    }
-    
-    div.stButton > button {
-        width: 100%;
-        border-radius: 8px;
-        height: 45px;
+    @keyframes fadeIn {
+        0% { opacity: 0; transform: translateY(10px); }
+        100% { opacity: 1; transform: translateY(0); }
     }
 </style>
 """, unsafe_allow_html=True)
 
-# --- 3. 基础数据 ---
+# --- 4. 基础数据 ---
 
 STATE_LIST = [
     "Johor", "Kedah", "Kelantan", "Melaka", "Negeri Sembilan", 
@@ -161,18 +138,28 @@ SUBJECT_LIST = [
     "Kesusasteraan Melayu Komunikatif", "Kesusasteraan Inggeris"
 ]
 
-# --- 4. 终极全集奖学金数据库 ---
+# --- 5. 完整奖学金数据库 (含 PPN 修复) ---
 SCHOLARSHIP_DB = [
     # === TIER 1: JPA 家族 ===
     {
         "name": "JPA Program Penajaan Nasional (PPN)",
         "provider": "JPA",
         "tags": ["全球 Top 10", "全额资助"],
-        "min_A_total": 9, "allow_A_minus": False, "min_A_plus": 9,       
-        "hard_req": {"Bahasa Melayu": ["A+", "A"], "Sejarah": ["A+", "A"]},
+        # 🌟 修复：9个 A+，开启 must_all_A_minus 严格模式
+        "min_A_total": 9, "allow_A_minus": False, "min_A_plus": 9,        
+        "hard_req": {
+            "Bahasa Melayu": ["A+"], 
+            "Bahasa Inggeris": ["A+"],
+            "Sejarah": ["A+"],
+            "Matematik": ["A+"],
+            "Matematik Tambahan": ["A+"],
+            "Fizik": ["A+"],
+            "Kimia": ["A+"]
+        },
+        "must_all_A_minus": True, # <--- 新增开关：所有科目最低 A-
         "koko_marks": 8.5, "state_req": "All", "muslim_req": False, "bumi_req": False,
         "field_block": "医学/牙医/药剂 (Medicine/Dentistry/Pharmacy)", 
-        "desc": "JPA 最顶级的奖学金，全额资助前往全球 Top 10 大学 (UK/US)。需通过面试。",
+        "desc": "JPA 最顶级的奖学金。要求核心科目全 A+，且其余所有科目不得低于 A-。",
         "link": "https://esilav2.jpa.gov.my/"
     },
     {
@@ -213,7 +200,7 @@ SCHOLARSHIP_DB = [
         "name": "Petronas PESP",
         "provider": "Petronas",
         "tags": ["油气/工程", "就业保障"],
-        "min_A_total": 8, "allow_A_minus": False, "min_A_plus": 4,       
+        "min_A_total": 8, "allow_A_minus": False, "min_A_plus": 4,        
         "hard_req": {"Matematik": ["A+", "A"], "Bahasa Inggeris": ["A+", "A"]}, 
         "koko_marks": 8.5, "state_req": "All", "muslim_req": False, "bumi_req": False,
         "field_block": "医学 (Medicine), 师范 (Education)",
@@ -244,7 +231,7 @@ SCHOLARSHIP_DB = [
         "name": "CIMB ASEAN Scholarship",
         "provider": "CIMB",
         "tags": ["金融/科技", "数据科学"],
-        "min_A_total": 8, "allow_A_minus": False, "min_A_plus": 0,       
+        "min_A_total": 8, "allow_A_minus": False, "min_A_plus": 0,        
         "hard_req": {}, "koko_marks": 8.5, "state_req": "All", "muslim_req": False, "bumi_req": False,
         "desc": "涵盖金融与科技数据领域。提供导师指导与直接就业机会。",
         "link": "https://www.cimb.com/en/careers/students/cimb-asean-scholarship.html"
@@ -253,7 +240,7 @@ SCHOLARSHIP_DB = [
         "name": "Bank Negara Kijang Scholarship",
         "provider": "Bank Negara",
         "tags": ["经济/法律", "精英"],
-        "min_A_total": 8, "allow_A_minus": False, "min_A_plus": 8,       
+        "min_A_total": 8, "allow_A_minus": False, "min_A_plus": 8,        
         "hard_req": {}, "koko_marks": 8.5, "state_req": "All", "muslim_req": False, "bumi_req": False,
         "field_only": "经济, 会计, 金融, 法律 (Economics/Law/Finance)",
         "desc": "央行奖学金。不资助纯医学或纯工程 (除非 Fintech 相关)。",
@@ -476,9 +463,9 @@ SCHOLARSHIP_DB = [
     }
 ]
 
-# --- 4. 界面逻辑 ---
+# --- 6. 界面逻辑 ---
 
-st.title("🎓 SPM Scholarship Check")
+st.title("🎓 SPM Scholarship Check + AI Advisor")
 st.caption("输入成绩，AI 自动匹配符合资格的马来西亚热门奖学金。")
 st.markdown("---")
 
@@ -495,10 +482,14 @@ with col2:
     race = st.selectbox("🌏 种族身份 (Status)", ["Bumiputera", "Non-Bumiputera"], index=1)
     is_bumi = True if race == "Bumiputera" else False
 
+# ==========================================
+# 🚀 替换开始：防卡顿 + 智能过滤版
+# ==========================================
+
 st.subheader("📚 科目与成绩 (Subjects & Grades)")
 st.caption("👇 点击下方 **+** 号添加科目。")
 
-# === 动态列表逻辑 (回调版) ===
+# 1. 初始化 Session State
 if 'rows' not in st.session_state:
     st.session_state.rows = [
         {"id": str(uuid.uuid4()), "subject": "Bahasa Melayu", "grade": "A+"},
@@ -508,54 +499,98 @@ if 'rows' not in st.session_state:
         {"id": str(uuid.uuid4()), "subject": "Pendidikan Moral", "grade": "A"},
     ]
 
-def update_subject(idx, row_id):
-    key = f"sub_{row_id}"
-    st.session_state.rows[idx]['subject'] = st.session_state[key]
+# 2. 【关键优化】数据同步步：先从界面获取最新值，更新到 rows 列表
+#    这步操作替代了 on_change，能极大减少卡顿
+for row in st.session_state.rows:
+    sub_key = f"sub_{row['id']}"
+    grade_key = f"grade_{row['id']}"
+    
+    # 如果界面上已经有这个控件的值，就同步回 rows 列表
+    if sub_key in st.session_state:
+        row['subject'] = st.session_state[sub_key]
+    if grade_key in st.session_state:
+        row['grade'] = st.session_state[grade_key]
 
-def update_grade(idx, row_id):
-    key = f"grade_{row_id}"
-    st.session_state.rows[idx]['grade'] = st.session_state[key]
+# 3. 计算“已被选过”的科目 (用于过滤)
+all_selected_subjects = [r['subject'] for r in st.session_state.rows if r['subject'] != "-- 请选择 --"]
 
-rows_to_delete = []
-all_selected_subjects = [row['subject'] for row in st.session_state.rows if row['subject'] != "-- 请选择 --"]
-
+# 4. 标题栏
 h1, h2, h3, h4 = st.columns([0.5, 3, 1.5, 0.5])
 with h1: st.markdown("**#**")
 with h2: st.markdown("**科目 (Subject)**")
 with h3: st.markdown("**等级 (Grade)**")
 with h4: st.markdown("")
 
-FULL_SUBJECT_OPTIONS = ["-- 请选择 --"] + SUBJECT_LIST
+rows_to_delete = []
 GRADE_OPTIONS = ["-- 请选择 --", "A+", "A", "A-", "B+", "B", "C+", "C", "D", "E", "G"]
 
+# 5. 渲染每一行
 for i, row in enumerate(st.session_state.rows):
     c1, c2, c3, c4 = st.columns([0.5, 3, 1.5, 0.5])
-    with c1: st.write(f"{i + 1}") 
+    
+    with c1: 
+        st.write(f"{i + 1}") 
+    
     with c2:
-        available_subjects = [sub for sub in SUBJECT_LIST if sub not in all_selected_subjects or sub == row['subject']]
+        # --- 智能过滤逻辑 ---
+        # 逻辑：完整列表 - 别人选过的 + 我自己当前选的
+        # 这样下拉菜单里就只有“剩下的”和“我自己当前选的”
+        available_subjects = [
+            s for s in SUBJECT_LIST 
+            if s not in all_selected_subjects or s == row['subject']
+        ]
         final_options = ["-- 请选择 --"] + available_subjects
-        curr_sub = row["subject"]
-        sub_idx = final_options.index(curr_sub) if curr_sub in final_options else 0
-        st.selectbox("Sub", final_options, index=sub_idx, key=f"sub_{row['id']}", label_visibility="collapsed", on_change=update_subject, args=(i, row['id']))
-    with c3:
-        curr_grade = row["grade"]
-        grade_idx = GRADE_OPTIONS.index(curr_grade) if curr_grade in GRADE_OPTIONS else 0
-        st.selectbox("Grd", GRADE_OPTIONS, index=grade_idx, key=f"grade_{row['id']}", label_visibility="collapsed", on_change=update_grade, args=(i, row['id']))
-    with c4:
-        if st.button("🗑️", key=f"del_{row['id']}"): rows_to_delete.append(i)
+        
+        # 确保当前选的值在选项列表里 (防止报错)
+        current_index = 0
+        if row['subject'] in final_options:
+            current_index = final_options.index(row['subject'])
+        
+        # 渲染下拉框 (注意：没有 on_change 了)
+        st.selectbox(
+            "Subject", 
+            options=final_options,
+            index=current_index,
+            key=f"sub_{row['id']}", # key 必须对应上面的同步逻辑
+            label_visibility="collapsed"
+        )
 
+    with c3:
+        current_grade_index = 0
+        if row['grade'] in GRADE_OPTIONS:
+            current_grade_index = GRADE_OPTIONS.index(row['grade'])
+            
+        st.selectbox(
+            "Grade", 
+            options=GRADE_OPTIONS, 
+            index=current_grade_index,
+            key=f"grade_{row['id']}",
+            label_visibility="collapsed"
+        )
+        
+    with c4:
+        if st.button("🗑️", key=f"del_{row['id']}"):
+            rows_to_delete.append(i)
+
+# 6. 处理删除
 if rows_to_delete:
-    for index in sorted(rows_to_delete, reverse=True): del st.session_state.rows[index]
+    for index in sorted(rows_to_delete, reverse=True):
+        del st.session_state.rows[index]
     st.rerun()
 
+# 7. 添加按钮
 if st.button("➕ 添加科目 (Add Subject)"):
     st.session_state.rows.append({"id": str(uuid.uuid4()), "subject": "-- 请选择 --", "grade": "-- 请选择 --"})
     st.rerun()
 
-# === 侧边栏 (TNG 支持 & 反馈) ===
+# ==========================================
+# 🚀 替换结束
+# ==========================================
+
+# === 侧边栏 ===
 with st.sidebar:
     st.markdown("### 🌟 关于这个 App")
-    st.info("输入成绩，即刻匹配 JPA, Petronas 及各州 Yayasan 奖学金。")
+    st.info("输入成绩，即刻匹配 JPA, Petronas 及各州 Yayasan 奖学金")
     st.markdown("---")
     st.markdown("### ☕ 请开发者喝杯咖啡")
     st.write("服务器和维护需要成本。如果觉得好用，欢迎打赏支持！")
@@ -563,16 +598,21 @@ with st.sidebar:
     if os.path.exists("tng.jpeg"):
         st.image("tng.jpeg", caption="Touch 'n Go eWallet", use_container_width=True)
     else:
-        st.warning("请确保 'tng.jpeg' 文件在代码目录下。")
-    
+        # 默默处理，不报错
+        pass
+        
     st.markdown("---")
-    # 暖心的反馈文案
     st.markdown("### 💌 帮助学弟学妹")
     st.write("如果你发现某个奖学金的条件变了，或者 App 有问题，请一定要告诉我！你的反馈能帮到明年千千万万的考生。")
-    
     GOOGLE_FORM_URL = "https://docs.google.com/forms/d/e/1FAIpQLScOcxd2Bz5L2aKmVxIWCXtEwGC45T2yTU_W7NVyxawqGe6o4Q/viewform?usp=dialog" 
-    # 使用 st.link_button 替代 raw HTML，避免代码乱码
     st.link_button("📝 点击提交反馈 (Google Form)", GOOGLE_FORM_URL)
+
+# --- Student Input for AI ---
+st.markdown("### 🤖 AI 咨询 (Beta)")
+student_wish = st.text_input(
+    "你想读什么科系？或者对未来有什么迷茫？",
+    placeholder="例如：我想读 Computer Science，或者我不确定要选 Matriculation 还是 A-Level..."
+)
 
 # --- 分析按钮 ---
 st.markdown("<div style='margin-bottom: 20px;'></div>", unsafe_allow_html=True)
@@ -583,28 +623,54 @@ if analyze_btn:
     components.html("""<script>window.parent.document.getElementById('result_anchor').scrollIntoView({behavior: 'smooth'});</script>""", height=0)
     st.markdown("### 📊 分析结果")
     
-    # 统计
+    # 1. 统计成绩 & 清洗数据
     user_grades = {}
     count_A_plus = 0; count_A_strict = 0; count_A_loose = 0
+    
+    # 第一次遍历：存入字典 (去除重复科目)
     for row in st.session_state.rows:
         sub = row['subject']; grade = row['grade']
         if sub == "-- 请选择 --" or grade == "-- 请选择 --": continue
         if sub: user_grades[sub] = grade
+        
+    # 第二次遍历：根据字典统计分数 (确保统计准确)
+    for sub, grade in user_grades.items():
         if grade == "A+": count_A_plus+=1; count_A_strict+=1; count_A_loose+=1
         elif grade == "A": count_A_strict+=1; count_A_loose+=1
         elif grade == "A-": count_A_loose+=1
-            
+    
+    # 2. 构建 AI Prompt
+    prompt_grades_str = ""
+    for sub, grade in user_grades.items():
+        prompt_grades_str += f"- {sub}: {grade}\n"
+
+    ai_prompt = f"""
+    Student Profile:
+    - State: {user_state}
+    - Religion/Race Status: {religion}, {race}
+    - Koko Score: {koko_score}/10
+    
+    SPM Results:
+    {prompt_grades_str}
+    Summary: {count_A_plus} A+, {count_A_strict} A (A+/A), {count_A_loose} A (including A-).
+    
+    Student's Wish/Question: "{student_wish}"
+    
+    Eligible Scholarships (based on hard requirements):
+    """
+    
     eligible_count = 0
     
+    # 3. 奖学金匹配循环
     for sch in SCHOLARSHIP_DB:
         is_pass = True
         
-        # 1. 基础门槛
+        # --- 匹配逻辑 ---
         if sch['state_req'] != "All" and sch['state_req'] != user_state: continue 
         if sch.get('muslim_req') and not is_muslim: continue
         if sch.get('bumi_req') and not is_bumi: continue
 
-        # 2. 成绩判定
+        # 成绩判定
         if sch['name'].startswith("JPA JKPJ"):
             science_pass = True
             for sub in ["Matematik", "Matematik Tambahan", "Fizik"]:
@@ -618,13 +684,19 @@ if analyze_btn:
                 if user_grades.get(req_sub) not in req_grades: is_pass = False
 
         if sch['min_A_plus'] > 0 and count_A_plus < sch['min_A_plus']: is_pass = False
+        
+        # 🌟 修复：PNN 专用逻辑，如果开启 must_all_A_minus，则所有科目不得低于 A-
+        if sch.get("must_all_A_minus") and any(g not in ["A+", "A", "A-"] for g in user_grades.values()):
+            is_pass = False
+            
         if koko_score < sch['koko_marks']: is_pass = False
 
+        # --- 匹配成功，显示卡片 ---
         if is_pass:
             eligible_count += 1
-            tags_html = "".join([f"<span class='tag'>{t}</span>" for t in sch['tags']])
+            ai_prompt += f"- {sch['name']}\n"
             
-            # 动态生成提示信息
+            tags_html = "".join([f"<span class='tag'>{t}</span>" for t in sch['tags']])
             info_html = ""
             if "field_only" in sch:
                 info_html += f"<div class='info-text'><span class='field-tag'>🎯 指定科系:</span> {sch['field_only']}</div>"
@@ -648,8 +720,31 @@ if analyze_btn:
             
             if "link" in sch:
                 st.link_button("🔗 官网核实 (Verify)", sch['link'])
-            
             st.markdown("<div style='margin-bottom: 20px;'></div>", unsafe_allow_html=True)
             
     if eligible_count == 0:
-        st.warning("无符合标准的奖学金。")
+        st.warning("根据硬性指标，暂无完全匹配的奖学金。")
+        ai_prompt += "None. The student did not qualify for any scholarships in the database.\n"
+    
+    # 补充 AI Prompt 指令
+    ai_prompt += """
+    \nBased on the above, provide helpful advice to the student. 
+    1. If scholarships are listed, recommend the best fit for their wish.
+    2. If NO scholarships are listed, suggest alternative pathways (e.g., Matrikulasi, STPM, IPTS loans).
+    3. Keep the advice encouraging but realistic.
+    """
+
+    # --- 4. DeepSeek AI 分析 ---
+    st.markdown("### 🤖 DeepSeek AI 升学建议")
+    
+    if student_wish:
+        with st.spinner("DeepSeek 正在思考你的未来..."):
+            advice = AskDeepSeek(ai_prompt)
+            st.markdown(f"""
+            <div class="ai-box">
+                <h4>💡 AI 的建议：</h4>
+                <p>{advice}</p>
+            </div>
+            """, unsafe_allow_html=True)
+    else:
+        st.info("在上方输入你的升学愿望，AI 才能给你更准确的建议哦！")
