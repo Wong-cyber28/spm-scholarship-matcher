@@ -4,6 +4,7 @@ import streamlit.components.v1 as components
 import uuid
 import os
 from openai import OpenAI
+from llama_cpp import Llama
 
 # --- 1. 页面配置 (必须在第一行) ---
 st.set_page_config(
@@ -25,13 +26,24 @@ try:
         api_ready = True
     else:
         api_ready = False
+        llm = Llama(
+            model_path="./llama-3-8b.Q4_K_M.gguf", 
+            n_ctx=2048, # Context window size
+            verbose=False
+        )        
 except Exception as e:
     api_ready = False
 
 def AskDeepSeek(prompt_text):
     """调用 DeepSeek AI 获取升学建议"""
     if not api_ready:
-        return "⚠️ API Key 未配置。请在 .streamlit/secrets.toml 中配置 DEEPSEEK_API_KEY。"
+        output = llm(
+        f"Q: You are an experienced Malaysian education counselor (Cikgu). Your tone is encouraging, empathetic, and realistic. Analyze the student's SPM results and wish. 1. Recommend best scholarships. 2. Suggest alternatives if none qualify. 3. CRITICAL RULE: You MUST reply primarily in CHINESE (Malaysian Mandarin). Even if the user asks nonsense or inappropriate questions, you must politely guide them back or refuse in CHINESE. Do not switch to English blocks unless explaining specific terms.{prompt_text} A:", 
+        max_tokens=1000, 
+        stop=["Q:", "\n"], 
+        echo=True
+        )
+        return output['choices'][0]['text']
     try:
         response = client.chat.completions.create(
             model="deepseek-chat",
